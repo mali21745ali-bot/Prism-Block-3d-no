@@ -1,0 +1,610 @@
+{
+  "entities": {
+    "UserAccount": {
+      "title": "UserAccount",
+      "description": "Authenticated player account, preferences, progress summary, wallet balances, verification details, and withdrawal security PIN hash.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Firebase Auth UID matching document ID." },
+        "displayName": { "type": "string", "description": "Player display name." },
+        "email": { "type": "string", "description": "Private player email address." },
+        "photoUrl": { "type": "string", "description": "Optional profile avatar URL." },
+        "blocked": { "type": "boolean", "description": "Admin moderation flag blocking blocked players from actions." },
+        "selectedThemeId": { "type": "string", "description": "Active 3D board theme ID." },
+        "unlockedThemeIds": { "type": "array", "description": "Bounded list of unlocked theme IDs." },
+        "classicHighScore": { "type": "integer", "description": "Highest Classic mode score." },
+        "totalLinesCleared": { "type": "integer", "description": "Lifetime cleared lines." },
+        "totalGamesPlayed": { "type": "integer", "description": "Lifetime played sessions." },
+        "currentLevel": { "type": "integer", "description": "Current active Level Mode stage (1..100)." },
+        "currentLevelLines": { "type": "integer", "description": "Lines cleared toward current level (0..1000)." },
+        "completedLevelsCount": { "type": "integer", "description": "Total completed levels (0..100)." },
+        "dailyRewardNextDay": { "type": "integer", "description": "Next unclaimed daily reward day (1..7); never resets on missed days." },
+        "dailyRewardLastClaimDate": { "type": "string", "description": "UTC date string YYYY-MM-DD of last daily login reward claim." },
+        "dailyChallengeLastDate": { "type": "string", "description": "UTC date string YYYY-MM-DD of latest daily challenge run." },
+        "dailyChallengeBestScore": { "type": "integer", "description": "Best score achieved in today's daily challenge." },
+        "mainWalletPkrPaisa": { "type": "integer", "description": "Main Wallet balance in PKR paisa (100 paisa = 1.00 PKR)." },
+        "purchasedCoins": { "type": "integer", "description": "Purchased Coin balance tracked separately for compliance." },
+        "earnedCoins": { "type": "integer", "description": "Promotional and gameplay earned Coin balance." },
+        "walletVerificationName": { "type": "string", "description": "Submitted full name for payout details." },
+        "walletVerificationProvider": { "type": "string", "enum": ["", "JAZZCASH", "EASYPAISA"] },
+        "walletVerificationAccount": { "type": "string", "description": "Submitted JazzCash or Easypaisa account number." },
+        "walletVerificationCompleted": { "type": "boolean", "description": "Indicates wallet details form has been submitted." },
+        "withdrawalPinHash": { "type": "string", "description": "Salted SHA-256 hash of user's withdrawal password." },
+        "withdrawalPinSalt": { "type": "string", "description": "Random salt for withdrawal password hash." },
+        "musicEnabled": { "type": "boolean", "description": "Background music toggle." },
+        "sfxEnabled": { "type": "boolean", "description": "Sound effects toggle." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp of account creation." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of last update." }
+      },
+      "required": [
+        "userId", "displayName", "email", "photoUrl", "blocked", "selectedThemeId",
+        "unlockedThemeIds", "classicHighScore", "totalLinesCleared", "totalGamesPlayed",
+        "currentLevel", "currentLevelLines", "completedLevelsCount", "dailyRewardNextDay",
+        "dailyRewardLastClaimDate", "dailyChallengeLastDate", "dailyChallengeBestScore",
+        "mainWalletPkrPaisa", "purchasedCoins", "earnedCoins", "walletVerificationName",
+        "walletVerificationProvider", "walletVerificationAccount", "walletVerificationCompleted",
+        "withdrawalPinHash", "withdrawalPinSalt", "musicEnabled", "sfxEnabled", "createdAt", "updatedAt"
+      ]
+    },
+    "LevelProgress": {
+      "title": "LevelProgress",
+      "description": "Per-player, per-level progress record tracking cleared lines, required target lines, best score, attempts, star rating, and completion status.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string", "description": "Owner Firebase Auth UID." },
+        "levelNumber": { "type": "integer", "description": "Level stage number (1..100)." },
+        "linesCleared": { "type": "integer", "description": "Lines cleared on this level (0..requiredLines)." },
+        "requiredLines": { "type": "integer", "description": "Lines required to complete this level (1..10000)." },
+        "bestScore": { "type": "integer", "description": "Highest score achieved while playing this level." },
+        "attemptsCount": { "type": "integer", "description": "Total play attempts recorded on this level." },
+        "starsEarned": { "type": "integer", "description": "Star rating earned (0..3)." },
+        "completed": { "type": "boolean", "description": "Whether the player has completed this level." },
+        "completedAt": { "type": "string", "format": "date-time", "description": "Optional server timestamp set once when completed transitions to true." },
+        "createdAt": { "type": "string", "format": "date-time", "description": "Server timestamp when level progress record was created." },
+        "updatedAt": { "type": "string", "format": "date-time", "description": "Server timestamp of latest update." }
+      },
+      "required": [
+        "userId", "levelNumber", "linesCleared", "requiredLines", "bestScore",
+        "attemptsCount", "starsEarned", "completed", "createdAt", "updatedAt"
+      ]
+    },
+    "AdminRecord": {
+      "title": "AdminRecord",
+      "description": "Authorized admin role and granular permissions managed exclusively by Super Admin.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "email": { "type": "string" },
+        "displayName": { "type": "string" },
+        "role": { "type": "string", "enum": ["SUPER_ADMIN", "ADMIN"] },
+        "active": { "type": "boolean" },
+        "permissions": { "type": "array" },
+        "grantedBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "email", "displayName", "role", "active", "permissions", "grantedBy", "createdAt", "updatedAt"]
+    },
+    "GameSession": {
+      "title": "GameSession",
+      "description": "Recorded gameplay session outcome with score, cleared lines, and coins awarded.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "mode": { "type": "string", "enum": ["CLASSIC", "LEVEL", "DAILY", "TIME"] },
+        "score": { "type": "integer" },
+        "linesCleared": { "type": "integer" },
+        "coinsEarned": { "type": "integer" },
+        "levelNumber": { "type": "integer" },
+        "challengeId": { "type": "string" },
+        "continuesUsed": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "mode", "score", "linesCleared", "coinsEarned", "levelNumber", "challengeId", "continuesUsed", "createdAt"]
+    },
+    "LeaderboardEntry": {
+      "title": "LeaderboardEntry",
+      "description": "Public leaderboard ranking document containing zero PII.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "photoUrl": { "type": "string" },
+        "boardType": { "type": "string", "enum": ["DAILY", "ALL_TIME"] },
+        "dateKey": { "type": "string" },
+        "bestScore": { "type": "integer" },
+        "totalLines": { "type": "integer" },
+        "highestLevel": { "type": "integer" },
+        "gamesPlayed": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "displayName", "photoUrl", "boardType", "dateKey", "bestScore", "totalLines", "highestLevel", "gamesPlayed", "createdAt", "updatedAt"]
+    },
+    "DailyChallenge": {
+      "title": "DailyChallenge",
+      "description": "Daily puzzle challenge metadata and target goals.",
+      "type": "object",
+      "properties": {
+        "dateKey": { "type": "string" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "seed": { "type": "integer" },
+        "targetLines": { "type": "integer" },
+        "bonusCoins": { "type": "integer" },
+        "active": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["dateKey", "title", "description", "seed", "targetLines", "bonusCoins", "active", "createdAt", "updatedAt"]
+    },
+    "DailyChallengeClaim": {
+      "title": "DailyChallengeClaim",
+      "description": "Immutable per-user per-day reward claim receipt preventing duplicate claims.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "dateKey": { "type": "string" },
+        "score": { "type": "integer" },
+        "linesCleared": { "type": "integer" },
+        "bonusCoinsClaimed": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "dateKey", "score", "linesCleared", "bonusCoinsClaimed", "createdAt"]
+    },
+    "TimeChallenge": {
+      "title": "TimeChallenge",
+      "description": "Admin-managed free timed competition with leaderboard or target score reward rules.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "durationSeconds": { "type": "integer" },
+        "startTimeMillis": { "type": "integer" },
+        "endTimeMillis": { "type": "integer" },
+        "rewardType": { "type": "string", "enum": ["LEADERBOARD", "TARGET"] },
+        "targetScore": { "type": "integer" },
+        "rewardCoins": { "type": "integer" },
+        "active": { "type": "boolean" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "description", "durationSeconds", "startTimeMillis", "endTimeMillis", "rewardType", "targetScore", "rewardCoins", "active", "createdBy", "createdAt", "updatedAt"]
+    },
+    "ChallengeParticipant": {
+      "title": "ChallengeParticipant",
+      "description": "Player participation score and target-reward claim state for a Time Challenge.",
+      "type": "object",
+      "properties": {
+        "challengeId": { "type": "string" },
+        "userId": { "type": "string" },
+        "displayName": { "type": "string" },
+        "bestScore": { "type": "integer" },
+        "linesCleared": { "type": "integer" },
+        "targetRewardClaimed": { "type": "boolean" },
+        "rewardCoinsAwarded": { "type": "integer" },
+        "publicEntry": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["challengeId", "userId", "displayName", "bestScore", "linesCleared", "targetRewardClaimed", "rewardCoinsAwarded", "publicEntry", "createdAt", "updatedAt"]
+    },
+    "WalletTransaction": {
+      "title": "WalletTransaction",
+      "description": "Immutable ledger entry for every PKR or Coin balance mutation.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "walletType": { "type": "string", "enum": ["MAIN_PKR", "COIN"] },
+        "coinSource": { "type": "string", "enum": ["PURCHASED", "EARNED", "NONE"] },
+        "txType": {
+          "type": "string",
+          "enum": [
+            "GAME_REWARD", "LEVEL_REWARD", "DAILY_REWARD", "CHALLENGE_REWARD",
+            "CONTINUE_SPEND", "THEME_PURCHASE", "SHOP_PURCHASE",
+            "EXCHANGE_TO_PKR", "EXCHANGE_TO_COIN", "DEPOSIT_CREDIT",
+            "WITHDRAWAL_HOLD", "WITHDRAWAL_PAID", "WITHDRAWAL_REFUND", "ADMIN_ADJUST"
+          ]
+        },
+        "amountDelta": { "type": "integer" },
+        "balanceAfter": { "type": "integer" },
+        "description": { "type": "string" },
+        "referenceId": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "walletType", "coinSource", "txType", "amountDelta", "balanceAfter", "description", "referenceId", "createdAt"]
+    },
+    "DepositRequest": {
+      "title": "DepositRequest",
+      "description": "Manual verification PKR deposit request via JazzCash, Easypaisa, or Bank Transfer.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "amountPaisa": { "type": "integer" },
+        "paymentMethod": { "type": "string", "enum": ["JAZZCASH", "EASYPAISA", "BANK_TRANSFER"] },
+        "transactionRef": { "type": "string" },
+        "senderAccount": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "PROCESSING", "APPROVED", "REJECTED"] },
+        "adminNote": { "type": "string" },
+        "adminPaymentRef": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "idempotencyKey": { "type": "string" },
+        "sandboxMode": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userEmail", "userName", "amountPaisa", "paymentMethod", "transactionRef", "senderAccount", "status", "adminNote", "adminPaymentRef", "reviewedBy", "idempotencyKey", "sandboxMode", "createdAt", "updatedAt"]
+    },
+    "WithdrawalRequest": {
+      "title": "WithdrawalRequest",
+      "description": "Password-verified PKR withdrawal request (min PKR 500) reviewed and paid manually by Admin.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "userName": { "type": "string" },
+        "amountPaisa": { "type": "integer" },
+        "paymentMethod": { "type": "string", "enum": ["JAZZCASH", "EASYPAISA", "BANK_TRANSFER"] },
+        "accountTitle": { "type": "string" },
+        "accountNumber": { "type": "string" },
+        "status": { "type": "string", "enum": ["PENDING", "PROCESSING", "APPROVED", "REJECTED", "PAID"] },
+        "adminNote": { "type": "string" },
+        "payoutReference": { "type": "string" },
+        "reviewedBy": { "type": "string" },
+        "idempotencyKey": { "type": "string" },
+        "sandboxMode": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "userEmail", "userName", "amountPaisa", "paymentMethod", "accountTitle", "accountNumber", "status", "adminNote", "payoutReference", "reviewedBy", "idempotencyKey", "sandboxMode", "createdAt", "updatedAt"]
+    },
+    "ExchangeRecord": {
+      "title": "ExchangeRecord",
+      "description": "Immutable Coin <-> PKR conversion ledger record.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "direction": { "type": "string", "enum": ["COIN_TO_PKR", "PKR_TO_COIN"] },
+        "coinsAmount": { "type": "integer" },
+        "pkrPaisaAmount": { "type": "integer" },
+        "ratePaisaPerCoin": { "type": "integer" },
+        "coinSource": { "type": "string", "enum": ["PURCHASED", "EARNED"] },
+        "idempotencyKey": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "direction", "coinsAmount", "pkrPaisaAmount", "ratePaisaPerCoin", "coinSource", "idempotencyKey", "createdAt"]
+    },
+    "ShopItem": {
+      "title": "ShopItem",
+      "description": "Dynamic Coin Shop item across all categories (Themes, Block Skins, Board Backgrounds, Special Effects, Game Boosters, Avatars, Profile Frames, Badges, Exclusive Items) managed by Admin.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "category": {
+          "type": "string",
+          "enum": ["THEME", "BLOCK_SKIN", "BOARD_BACKGROUND", "SPECIAL_EFFECT", "GAME_BOOSTER", "AVATAR", "PROFILE_FRAME", "BADGE", "EXCLUSIVE", "ITEM"]
+        },
+        "subType": { "type": "string" },
+        "themeKey": { "type": "string" },
+        "assetKey": { "type": "string" },
+        "imageUrl": { "type": "string" },
+        "priceCoins": { "type": "integer" },
+        "promoActive": { "type": "boolean" },
+        "promoPriceCoins": { "type": "integer" },
+        "promoStartMillis": { "type": "integer" },
+        "promoEndMillis": { "type": "integer" },
+        "promoLabel": { "type": "string" },
+        "premiumPastel": { "type": "boolean" },
+        "featured": { "type": "boolean" },
+        "newArrival": { "type": "boolean" },
+        "limitedEdition": { "type": "boolean" },
+        "available": { "type": "boolean" },
+        "consumable": { "type": "boolean" },
+        "boosterPackQty": { "type": "integer" },
+        "boosterMaxPerGame": { "type": "integer" },
+        "boosterPowerRadius": { "type": "integer" },
+        "sortOrder": { "type": "integer" },
+        "accentHex": { "type": "string" },
+        "totalSalesCount": { "type": "integer" },
+        "uniqueOwnersCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "name", "description", "category", "subType", "themeKey", "assetKey", "imageUrl",
+        "priceCoins", "promoActive", "promoPriceCoins", "promoStartMillis", "promoEndMillis",
+        "promoLabel", "premiumPastel", "featured", "newArrival", "limitedEdition", "available",
+        "consumable", "boosterPackQty", "boosterMaxPerGame", "boosterPowerRadius",
+        "sortOrder", "accentHex", "totalSalesCount", "uniqueOwnersCount", "createdAt", "updatedAt"
+      ]
+    },
+    "ShopCategory": {
+      "title": "ShopCategory",
+      "description": "Admin-managed Coin Shop category metadata, ordering, and visibility.",
+      "type": "object",
+      "properties": {
+        "categoryKey": { "type": "string" },
+        "displayName": { "type": "string" },
+        "description": { "type": "string" },
+        "iconKey": { "type": "string" },
+        "accentHex": { "type": "string" },
+        "enabled": { "type": "boolean" },
+        "sortOrder": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["categoryKey", "displayName", "description", "iconKey", "accentHex", "enabled", "sortOrder", "createdAt", "updatedAt"]
+    },
+    "PromotionalOffer": {
+      "title": "PromotionalOffer",
+      "description": "Admin-managed time-bound Coin Shop promotional discounts for items or categories.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "itemId": { "type": "string" },
+        "categoryKey": { "type": "string" },
+        "discountPercent": { "type": "integer" },
+        "promoPriceCoins": { "type": "integer" },
+        "startTimeMillis": { "type": "integer" },
+        "endTimeMillis": { "type": "integer" },
+        "active": { "type": "boolean" },
+        "createdBy": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["title", "description", "itemId", "categoryKey", "discountPercent", "promoPriceCoins", "startTimeMillis", "endTimeMillis", "active", "createdBy", "createdAt", "updatedAt"]
+    },
+    "PlayerInventory": {
+      "title": "PlayerInventory",
+      "description": "Per-player owned item list, active equipped cosmetics across all slots, and consumable booster quantities.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "ownedItemIds": { "type": "array" },
+        "equippedThemeId": { "type": "string" },
+        "equippedBlockSkinId": { "type": "string" },
+        "equippedBackgroundId": { "type": "string" },
+        "equippedEffectId": { "type": "string" },
+        "equippedAvatarId": { "type": "string" },
+        "equippedFrameId": { "type": "string" },
+        "equippedBadgeId": { "type": "string" },
+        "equippedExclusiveId": { "type": "string" },
+        "hammerCount": { "type": "integer" },
+        "undoCount": { "type": "integer" },
+        "shuffleCount": { "type": "integer" },
+        "rowBlasterCount": { "type": "integer" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "ownedItemIds", "equippedThemeId", "equippedBlockSkinId",
+        "equippedBackgroundId", "equippedEffectId", "equippedAvatarId",
+        "equippedFrameId", "equippedBadgeId", "equippedExclusiveId",
+        "hammerCount", "undoCount", "shuffleCount", "rowBlasterCount",
+        "createdAt", "updatedAt"
+      ]
+    },
+    "PurchasedItem": {
+      "title": "PurchasedItem",
+      "description": "Immutable permanent ownership receipt preventing duplicate non-consumable purchases and surviving price changes or item disabling.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "itemId": { "type": "string" },
+        "itemName": { "type": "string" },
+        "category": { "type": "string" },
+        "assetKey": { "type": "string" },
+        "pricePaidCoins": { "type": "integer" },
+        "originalPriceCoins": { "type": "integer" },
+        "promoApplied": { "type": "boolean" },
+        "quantityPurchased": { "type": "integer" },
+        "consumable": { "type": "boolean" },
+        "idempotencyKey": { "type": "string" },
+        "purchasedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "itemId", "itemName", "category", "assetKey",
+        "pricePaidCoins", "originalPriceCoins", "promoApplied",
+        "quantityPurchased", "consumable", "idempotencyKey", "purchasedAt"
+      ]
+    },
+    "ShopTransaction": {
+      "title": "ShopTransaction",
+      "description": "Immutable Coin Shop purchase ledger used for player purchase history and Admin item sales analytics.",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userDisplayName": { "type": "string" },
+        "itemId": { "type": "string" },
+        "itemName": { "type": "string" },
+        "category": { "type": "string" },
+        "pricePaidCoins": { "type": "integer" },
+        "originalPriceCoins": { "type": "integer" },
+        "coinSource": { "type": "string", "enum": ["EARNED", "PURCHASED", "MIXED", "FREE"] },
+        "quantity": { "type": "integer" },
+        "promoOfferId": { "type": "string" },
+        "idempotencyKey": { "type": "string" },
+        "status": { "type": "string", "enum": ["COMPLETED"] },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "userId", "userDisplayName", "itemId", "itemName", "category",
+        "pricePaidCoins", "originalPriceCoins", "coinSource", "quantity",
+        "promoOfferId", "idempotencyKey", "status", "createdAt"
+      ]
+    },
+    "DailyRewardConfig": {
+      "title": "DailyRewardConfig",
+      "description": "Day 1 to Day 7 Daily Login Reward definition editable by Admin.",
+      "type": "object",
+      "properties": {
+        "dayNumber": { "type": "integer" },
+        "title": { "type": "string" },
+        "description": { "type": "string" },
+        "rewardCoins": { "type": "integer" },
+        "bonusItemName": { "type": "string" },
+        "active": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["dayNumber", "title", "description", "rewardCoins", "bonusItemName", "active", "updatedAt"]
+    },
+    "LevelConfig": {
+      "title": "LevelConfig",
+      "description": "Configuration and completion statistics for Levels 1 through 100.",
+      "type": "object",
+      "properties": {
+        "levelNumber": { "type": "integer" },
+        "requiredLines": { "type": "integer" },
+        "rewardCoins": { "type": "integer" },
+        "completionsCount": { "type": "integer" },
+        "active": { "type": "boolean" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["levelNumber", "requiredLines", "rewardCoins", "completionsCount", "active", "updatedAt"]
+    },
+    "GlobalSettings": {
+      "title": "GlobalSettings",
+      "description": "System-wide configurable gameplay, exchange, payment sandbox, and compliance settings.",
+      "type": "object",
+      "properties": {
+        "continueCostCoins": { "type": "integer" },
+        "exchangeRatePaisaPerCoin": { "type": "integer" },
+        "minWithdrawalPaisa": { "type": "integer" },
+        "maxDailyWithdrawals": { "type": "integer" },
+        "allowEarnedCoinCashout": { "type": "boolean" },
+        "jazzCashEnabled": { "type": "boolean" },
+        "easypaisaEnabled": { "type": "boolean" },
+        "bankTransferEnabled": { "type": "boolean" },
+        "jazzCashInstructions": { "type": "string" },
+        "easypaisaInstructions": { "type": "string" },
+        "bankTransferInstructions": { "type": "string" },
+        "paymentSandboxMode": { "type": "boolean" },
+        "rewardedAdConfigured": { "type": "boolean" },
+        "gameEnabled": { "type": "boolean" },
+        "maintenanceMessage": { "type": "string" },
+        "updatedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": [
+        "continueCostCoins", "exchangeRatePaisaPerCoin", "minWithdrawalPaisa",
+        "maxDailyWithdrawals", "allowEarnedCoinCashout", "jazzCashEnabled",
+        "easypaisaEnabled", "bankTransferEnabled", "jazzCashInstructions",
+        "easypaisaInstructions", "bankTransferInstructions", "paymentSandboxMode",
+        "rewardedAdConfigured", "gameEnabled", "maintenanceMessage", "updatedAt"
+      ]
+    },
+    "AuditLog": {
+      "title": "AuditLog",
+      "description": "Immutable admin audit log tracking every sensitive management action.",
+      "type": "object",
+      "properties": {
+        "adminUid": { "type": "string" },
+        "adminEmail": { "type": "string" },
+        "action": { "type": "string" },
+        "targetType": { "type": "string" },
+        "targetId": { "type": "string" },
+        "details": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["adminUid", "adminEmail", "action", "targetType", "targetId", "details", "createdAt"]
+    }
+  },
+  "firestore": {
+    "/users/{userId}": {
+      "schema": { "$ref": "#/entities/UserAccount" },
+      "description": "Private player profile, wallet balances, progress summary, and security preferences."
+    },
+    "/users/{userId}/levelProgress/{levelId}": {
+      "schema": { "$ref": "#/entities/LevelProgress" },
+      "description": "User-scoped per-level progress records keyed deterministically by level_<levelNumber>."
+    },
+    "/admins/{adminId}": {
+      "schema": { "$ref": "#/entities/AdminRecord" },
+      "description": "Admin authorization records managed solely by Super Admin."
+    },
+    "/gameSessions/{sessionId}": {
+      "schema": { "$ref": "#/entities/GameSession" },
+      "description": "Immutable gameplay session scores and line rewards."
+    },
+    "/leaderboards/{entryId}": {
+      "schema": { "$ref": "#/entities/LeaderboardEntry" },
+      "description": "Public Daily and All-Time leaderboard rankings with zero PII."
+    },
+    "/dailyChallenges/{dateKey}": {
+      "schema": { "$ref": "#/entities/DailyChallenge" },
+      "description": "Daily challenge definitions keyed by UTC date."
+    },
+    "/dailyChallengeClaims/{claimId}": {
+      "schema": { "$ref": "#/entities/DailyChallengeClaim" },
+      "description": "Immutable daily challenge reward claim records keyed by dateKey_uid."
+    },
+    "/timeChallenges/{challengeId}": {
+      "schema": { "$ref": "#/entities/TimeChallenge" },
+      "description": "Admin-controlled Time Challenges."
+    },
+    "/challengeParticipants/{participantId}": {
+      "schema": { "$ref": "#/entities/ChallengeParticipant" },
+      "description": "Time Challenge participant best scores and target reward claims."
+    },
+    "/walletTransactions/{txId}": {
+      "schema": { "$ref": "#/entities/WalletTransaction" },
+      "description": "Immutable Main Wallet and Coin Wallet ledger."
+    },
+    "/deposits/{depositId}": {
+      "schema": { "$ref": "#/entities/DepositRequest" },
+      "description": "Manual verification PKR deposit requests."
+    },
+    "/withdrawals/{withdrawalId}": {
+      "schema": { "$ref": "#/entities/WithdrawalRequest" },
+      "description": "Password-verified PKR withdrawal requests."
+    },
+    "/exchanges/{exchangeId}": {
+      "schema": { "$ref": "#/entities/ExchangeRecord" },
+      "description": "Immutable Coin <-> PKR exchange ledger."
+    },
+    "/shopItems/{itemId}": {
+      "schema": { "$ref": "#/entities/ShopItem" },
+      "description": "Admin-managed Coin Shop catalog across all categories with dynamic pricing and promotions."
+    },
+    "/shopCategories/{categoryId}": {
+      "schema": { "$ref": "#/entities/ShopCategory" },
+      "description": "Admin-managed Coin Shop categories."
+    },
+    "/promotionalOffers/{offerId}": {
+      "schema": { "$ref": "#/entities/PromotionalOffer" },
+      "description": "Admin-managed time-bound Coin Shop promotional discounts."
+    },
+    "/playerInventory/{userId}": {
+      "schema": { "$ref": "#/entities/PlayerInventory" },
+      "description": "Player owned items, equipped cosmetic slots, and consumable booster quantities."
+    },
+    "/purchasedItems/{purchaseId}": {
+      "schema": { "$ref": "#/entities/PurchasedItem" },
+      "description": "Immutable permanent purchase ownership receipts."
+    },
+    "/shopTransactions/{txId}": {
+      "schema": { "$ref": "#/entities/ShopTransaction" },
+      "description": "Immutable Coin Shop purchase ledger for player history and Admin analytics."
+    },
+    "/dailyRewards/{dayId}": {
+      "schema": { "$ref": "#/entities/DailyRewardConfig" },
+      "description": "Admin-editable 7-day Daily Login Rewards."
+    },
+    "/levels/{levelId}": {
+      "schema": { "$ref": "#/entities/LevelConfig" },
+      "description": "Level 1..100 reward and completion stats."
+    },
+    "/settings/{settingId}": {
+      "schema": { "$ref": "#/entities/GlobalSettings" },
+      "description": "Global game, wallet, and compliance settings."
+    },
+    "/auditLogs/{logId}": {
+      "schema": { "$ref": "#/entities/AuditLog" },
+      "description": "Immutable admin action audit trail."
+    }
+  }
+}

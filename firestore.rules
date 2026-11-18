@@ -1,0 +1,1138 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // 1. Global Default-Deny Safety Net
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    // 2. Hardened Primitive Helpers
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isSignedIn() && request.auth.uid == userId;
+    }
+
+    function incoming() {
+      return request.resource.data;
+    }
+
+    function existing() {
+      return resource.data;
+    }
+
+    function isValidId(id) {
+      return id is string && id.size() >= 1 && id.size() <= 128 && id.matches('^[a-zA-Z0-9_\\-]+$');
+    }
+
+    function isSuperAdmin() {
+      return isSignedIn()
+        && ('email' in request.auth.token)
+        && ('email_verified' in request.auth.token)
+        && request.auth.token.email == 'mali21745ali@gmail.com'
+        && request.auth.token.email_verified == true;
+    }
+
+    function isAdmin() {
+      return isSuperAdmin() || (
+        isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true
+      );
+    }
+
+    function hasAnyAdminPerm(perms) {
+      return isSuperAdmin() || (
+        isSignedIn()
+        && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.active == true
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.permissions.hasAny(perms)
+      );
+    }
+
+    function isValidTimestamp(ts) {
+      return ts is timestamp && ts <= request.time;
+    }
+
+    function currentExchangeRatePaisa() {
+      return exists(/databases/$(database)/documents/settings/global)
+        ? get(/databases/$(database)/documents/settings/global).data.exchangeRatePaisaPerCoin
+        : 5;
+    }
+
+    function earnedCashoutAllowed() {
+      return exists(/databases/$(database)/documents/settings/global)
+        && get(/databases/$(database)/documents/settings/global).data.allowEarnedCoinCashout == true;
+    }
+
+    // 3. Entity Validation Blueprints (Anti-Update-Gap)
+
+    function isValidUserAccount(data) {
+      return data.size() == 30
+        && data.keys().hasAll([
+          'userId', 'displayName', 'email', 'photoUrl', 'blocked', 'selectedThemeId',
+          'unlockedThemeIds', 'classicHighScore', 'totalLinesCleared', 'totalGamesPlayed',
+          'currentLevel', 'currentLevelLines', 'completedLevelsCount', 'dailyRewardNextDay',
+          'dailyRewardLastClaimDate', 'dailyChallengeLastDate', 'dailyChallengeBestScore',
+          'mainWalletPkrPaisa', 'purchasedCoins', 'earnedCoins', 'walletVerificationName',
+          'walletVerificationProvider', 'walletVerificationAccount', 'walletVerificationCompleted',
+          'withdrawalPinHash', 'withdrawalPinSalt', 'musicEnabled', 'sfxEnabled', 'createdAt', 'updatedAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50
+        && data.email is string && data.email.size() <= 120
+        && data.photoUrl is string && data.photoUrl.size() <= 500
+        && data.blocked is bool
+        && data.selectedThemeId is string && data.selectedThemeId.size() >= 1 && data.selectedThemeId.size() <= 50
+        && data.unlockedThemeIds is list && data.unlockedThemeIds.size() >= 1 && data.unlockedThemeIds.size() <= 60
+        && data.unlockedThemeIds[0] is string
+        && data.classicHighScore is int && data.classicHighScore >= 0
+        && data.totalLinesCleared is int && data.totalLinesCleared >= 0
+        && data.totalGamesPlayed is int && data.totalGamesPlayed >= 0
+        && data.currentLevel is int && data.currentLevel >= 1 && data.currentLevel <= 100
+        && data.currentLevelLines is int && data.currentLevelLines >= 0 && data.currentLevelLines <= 1000
+        && data.completedLevelsCount is int && data.completedLevelsCount >= 0 && data.completedLevelsCount <= 100
+        && data.dailyRewardNextDay is int && data.dailyRewardNextDay >= 1 && data.dailyRewardNextDay <= 7
+        && data.dailyRewardLastClaimDate is string && data.dailyRewardLastClaimDate.size() <= 20
+        && data.dailyChallengeLastDate is string && data.dailyChallengeLastDate.size() <= 20
+        && data.dailyChallengeBestScore is int && data.dailyChallengeBestScore >= 0
+        && data.mainWalletPkrPaisa is int && data.mainWalletPkrPaisa >= 0
+        && data.purchasedCoins is int && data.purchasedCoins >= 0
+        && data.earnedCoins is int && data.earnedCoins >= 0
+        && data.walletVerificationName is string && data.walletVerificationName.size() <= 100
+        && data.walletVerificationProvider in ['', 'JAZZCASH', 'EASYPAISA']
+        && data.walletVerificationAccount is string && data.walletVerificationAccount.size() <= 40
+        && data.walletVerificationCompleted is bool
+        && data.withdrawalPinHash is string && data.withdrawalPinHash.size() <= 128
+        && data.withdrawalPinSalt is string && data.withdrawalPinSalt.size() <= 64
+        && data.musicEnabled is bool
+        && data.sfxEnabled is bool
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidLevelProgress(data) {
+      let hasBase = data.keys().hasAll([
+        'userId', 'levelNumber', 'linesCleared', 'requiredLines', 'bestScore',
+        'attemptsCount', 'starsEarned', 'completed', 'createdAt', 'updatedAt'
+      ]);
+      return hasBase
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.levelNumber is int && data.levelNumber >= 1 && data.levelNumber <= 100
+        && data.requiredLines is int && data.requiredLines >= 1 && data.requiredLines <= 10000
+        && data.linesCleared is int && data.linesCleared >= 0 && data.linesCleared <= data.requiredLines
+        && data.bestScore is int && data.bestScore >= 0 && data.bestScore <= 10000000
+        && data.attemptsCount is int && data.attemptsCount >= 0 && data.attemptsCount <= 1000000
+        && data.starsEarned is int && data.starsEarned >= 0 && data.starsEarned <= 3
+        && data.completed is bool
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt)
+        && (
+          (data.completed == false && data.size() == 10)
+          || (
+            data.completed == true
+            && data.size() == 11
+            && ('completedAt' in data)
+            && isValidTimestamp(data.completedAt)
+            && data.linesCleared == data.requiredLines
+          )
+        );
+    }
+
+    function isValidAdminRecord(data) {
+      return data.keys().hasAll([
+          'userId', 'email', 'displayName', 'role', 'active', 'permissions', 'grantedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'email', 'displayName', 'role', 'active', 'permissions', 'grantedBy', 'createdAt', 'updatedAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.email is string && data.email.size() >= 3 && data.email.size() <= 120
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 60
+        && data.role == 'ADMIN'
+        && data.active is bool
+        && data.permissions is list && data.permissions.size() <= 25
+        && (data.permissions.size() == 0 || data.permissions[0] is string)
+        && data.grantedBy is string && data.grantedBy.size() >= 1 && data.grantedBy.size() <= 128
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidGameSession(data) {
+      return data.keys().hasAll([
+          'userId', 'mode', 'score', 'linesCleared', 'coinsEarned', 'levelNumber', 'challengeId', 'continuesUsed', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'mode', 'score', 'linesCleared', 'coinsEarned', 'levelNumber', 'challengeId', 'continuesUsed', 'createdAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.mode in ['CLASSIC', 'LEVEL', 'DAILY', 'TIME']
+        && data.score is int && data.score >= 0 && data.score <= 10000000
+        && data.linesCleared is int && data.linesCleared >= 0 && data.linesCleared <= 10000
+        && data.coinsEarned is int && data.coinsEarned == data.linesCleared
+        && data.score == data.linesCleared * 10
+        && data.levelNumber is int && data.levelNumber >= 0 && data.levelNumber <= 100
+        && data.challengeId is string && data.challengeId.size() <= 128
+        && data.continuesUsed is int && data.continuesUsed >= 0 && data.continuesUsed <= 50
+        && isValidTimestamp(data.createdAt);
+    }
+
+    function isValidLeaderboardEntry(data) {
+      return data.keys().hasAll([
+          'userId', 'displayName', 'photoUrl', 'boardType', 'dateKey',
+          'bestScore', 'totalLines', 'highestLevel', 'gamesPlayed', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'displayName', 'photoUrl', 'boardType', 'dateKey',
+          'bestScore', 'totalLines', 'highestLevel', 'gamesPlayed', 'createdAt', 'updatedAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50
+        && data.photoUrl is string && data.photoUrl.size() <= 500
+        && data.boardType in ['DAILY', 'ALL_TIME']
+        && data.dateKey is string && data.dateKey.size() >= 4 && data.dateKey.size() <= 20
+        && data.bestScore is int && data.bestScore >= 0 && data.bestScore <= 10000000
+        && data.totalLines is int && data.totalLines >= 0
+        && data.highestLevel is int && data.highestLevel >= 1 && data.highestLevel <= 100
+        && data.gamesPlayed is int && data.gamesPlayed >= 0
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidDailyChallenge(data) {
+      return data.keys().hasAll([
+          'dateKey', 'title', 'description', 'seed', 'targetLines', 'bonusCoins', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'dateKey', 'title', 'description', 'seed', 'targetLines', 'bonusCoins', 'active', 'createdAt', 'updatedAt'
+        ])
+        && data.dateKey is string && data.dateKey.size() >= 8 && data.dateKey.size() <= 20
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 80
+        && data.description is string && data.description.size() <= 300
+        && data.seed is int
+        && data.targetLines is int && data.targetLines >= 1 && data.targetLines <= 1000
+        && data.bonusCoins is int && data.bonusCoins >= 0 && data.bonusCoins <= 5000
+        && data.active is bool
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidDailyChallengeClaim(data) {
+      return data.keys().hasAll([
+          'userId', 'dateKey', 'score', 'linesCleared', 'bonusCoinsClaimed', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'dateKey', 'score', 'linesCleared', 'bonusCoinsClaimed', 'createdAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.dateKey is string && data.dateKey.size() >= 8 && data.dateKey.size() <= 20
+        && data.score is int && data.score >= 0
+        && data.linesCleared is int && data.linesCleared >= 0
+        && data.bonusCoinsClaimed is int && data.bonusCoinsClaimed >= 0 && data.bonusCoinsClaimed <= 500
+        && isValidTimestamp(data.createdAt);
+    }
+
+    function isValidTimeChallenge(data) {
+      return data.keys().hasAll([
+          'title', 'description', 'durationSeconds', 'startTimeMillis', 'endTimeMillis',
+          'rewardType', 'targetScore', 'rewardCoins', 'active', 'createdBy', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'title', 'description', 'durationSeconds', 'startTimeMillis', 'endTimeMillis',
+          'rewardType', 'targetScore', 'rewardCoins', 'active', 'createdBy', 'createdAt', 'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 100
+        && data.description is string && data.description.size() <= 500
+        && data.durationSeconds is int && data.durationSeconds >= 30 && data.durationSeconds <= 86400
+        && data.startTimeMillis is int && data.startTimeMillis >= 0
+        && data.endTimeMillis is int && data.endTimeMillis > data.startTimeMillis
+        && data.rewardType in ['LEADERBOARD', 'TARGET']
+        && data.targetScore is int && data.targetScore >= 0
+        && data.rewardCoins is int && data.rewardCoins >= 0 && data.rewardCoins <= 100000
+        && data.active is bool
+        && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidChallengeParticipant(data) {
+      return data.keys().hasAll([
+          'challengeId', 'userId', 'displayName', 'bestScore', 'linesCleared',
+          'targetRewardClaimed', 'rewardCoinsAwarded', 'publicEntry', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'challengeId', 'userId', 'displayName', 'bestScore', 'linesCleared',
+          'targetRewardClaimed', 'rewardCoinsAwarded', 'publicEntry', 'createdAt', 'updatedAt'
+        ])
+        && data.challengeId is string && data.challengeId.size() >= 1 && data.challengeId.size() <= 128
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.displayName is string && data.displayName.size() >= 1 && data.displayName.size() <= 50
+        && data.bestScore is int && data.bestScore >= 0 && data.bestScore <= 10000000
+        && data.linesCleared is int && data.linesCleared >= 0
+        && data.targetRewardClaimed is bool
+        && data.rewardCoinsAwarded is int && data.rewardCoinsAwarded >= 0 && data.rewardCoinsAwarded <= 100000
+        && data.publicEntry is bool && data.publicEntry == true
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidWalletTransaction(data) {
+      return data.keys().hasAll([
+          'userId', 'walletType', 'coinSource', 'txType', 'amountDelta',
+          'balanceAfter', 'description', 'referenceId', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'walletType', 'coinSource', 'txType', 'amountDelta',
+          'balanceAfter', 'description', 'referenceId', 'createdAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.walletType in ['MAIN_PKR', 'COIN']
+        && data.coinSource in ['PURCHASED', 'EARNED', 'NONE']
+        && data.txType in [
+          'GAME_REWARD', 'LEVEL_REWARD', 'DAILY_REWARD', 'CHALLENGE_REWARD',
+          'CONTINUE_SPEND', 'THEME_PURCHASE', 'SHOP_PURCHASE',
+          'EXCHANGE_TO_PKR', 'EXCHANGE_TO_COIN', 'DEPOSIT_CREDIT',
+          'WITHDRAWAL_HOLD', 'WITHDRAWAL_PAID', 'WITHDRAWAL_REFUND', 'ADMIN_ADJUST'
+        ]
+        && data.amountDelta is int
+        && data.balanceAfter is int && data.balanceAfter >= 0
+        && data.description is string && data.description.size() >= 1 && data.description.size() <= 200
+        && data.referenceId is string && data.referenceId.size() <= 128
+        && isValidTimestamp(data.createdAt);
+    }
+
+    function isValidDeposit(data) {
+      return data.keys().hasAll([
+          'userId', 'userEmail', 'userName', 'amountPaisa', 'paymentMethod',
+          'transactionRef', 'senderAccount', 'status', 'adminNote', 'adminPaymentRef',
+          'reviewedBy', 'idempotencyKey', 'sandboxMode', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'userEmail', 'userName', 'amountPaisa', 'paymentMethod',
+          'transactionRef', 'senderAccount', 'status', 'adminNote', 'adminPaymentRef',
+          'reviewedBy', 'idempotencyKey', 'sandboxMode', 'createdAt', 'updatedAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.userEmail is string && data.userEmail.size() <= 120
+        && data.userName is string && data.userName.size() >= 1 && data.userName.size() <= 60
+        && data.amountPaisa is int && data.amountPaisa >= 10000 && data.amountPaisa <= 50000000
+        && data.paymentMethod in ['JAZZCASH', 'EASYPAISA', 'BANK_TRANSFER']
+        && data.transactionRef is string && data.transactionRef.size() >= 4 && data.transactionRef.size() <= 100
+        && data.senderAccount is string && data.senderAccount.size() >= 4 && data.senderAccount.size() <= 60
+        && data.status in ['PENDING', 'PROCESSING', 'APPROVED', 'REJECTED']
+        && data.adminNote is string && data.adminNote.size() <= 300
+        && data.adminPaymentRef is string && data.adminPaymentRef.size() <= 120
+        && data.reviewedBy is string && data.reviewedBy.size() <= 128
+        && data.idempotencyKey is string && data.idempotencyKey.size() >= 8 && data.idempotencyKey.size() <= 128
+        && data.sandboxMode is bool
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidWithdrawal(data) {
+      return data.keys().hasAll([
+          'userId', 'userEmail', 'userName', 'amountPaisa', 'paymentMethod',
+          'accountTitle', 'accountNumber', 'status', 'adminNote', 'payoutReference',
+          'reviewedBy', 'idempotencyKey', 'sandboxMode', 'createdAt', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'userEmail', 'userName', 'amountPaisa', 'paymentMethod',
+          'accountTitle', 'accountNumber', 'status', 'adminNote', 'payoutReference',
+          'reviewedBy', 'idempotencyKey', 'sandboxMode', 'createdAt', 'updatedAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.userEmail is string && data.userEmail.size() <= 120
+        && data.userName is string && data.userName.size() >= 1 && data.userName.size() <= 60
+        && data.amountPaisa is int && data.amountPaisa >= 50000 && data.amountPaisa <= 50000000
+        && data.paymentMethod in ['JAZZCASH', 'EASYPAISA', 'BANK_TRANSFER']
+        && data.accountTitle is string && data.accountTitle.size() >= 2 && data.accountTitle.size() <= 100
+        && data.accountNumber is string && data.accountNumber.size() >= 4 && data.accountNumber.size() <= 60
+        && data.status in ['PENDING', 'PROCESSING', 'APPROVED', 'REJECTED', 'PAID']
+        && data.adminNote is string && data.adminNote.size() <= 300
+        && data.payoutReference is string && data.payoutReference.size() <= 120
+        && data.reviewedBy is string && data.reviewedBy.size() <= 128
+        && data.idempotencyKey is string && data.idempotencyKey.size() >= 8 && data.idempotencyKey.size() <= 128
+        && data.sandboxMode is bool
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidExchange(data) {
+      return data.keys().hasAll([
+          'userId', 'direction', 'coinsAmount', 'pkrPaisaAmount', 'ratePaisaPerCoin',
+          'coinSource', 'idempotencyKey', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'userId', 'direction', 'coinsAmount', 'pkrPaisaAmount', 'ratePaisaPerCoin',
+          'coinSource', 'idempotencyKey', 'createdAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.direction in ['COIN_TO_PKR', 'PKR_TO_COIN']
+        && data.coinsAmount is int && data.coinsAmount >= 1 && data.coinsAmount <= 10000000
+        && data.ratePaisaPerCoin is int && data.ratePaisaPerCoin >= 1 && data.ratePaisaPerCoin <= 1000
+        && data.pkrPaisaAmount is int && data.pkrPaisaAmount == data.coinsAmount * data.ratePaisaPerCoin
+        && data.coinSource in ['PURCHASED', 'EARNED']
+        && data.idempotencyKey is string && data.idempotencyKey.size() >= 8 && data.idempotencyKey.size() <= 128
+        && isValidTimestamp(data.createdAt);
+    }
+
+    function isValidShopItem(data) {
+      return data.size() == 28
+        && data.keys().hasAll([
+          'name', 'description', 'category', 'subType', 'themeKey', 'assetKey', 'imageUrl',
+          'priceCoins', 'promoActive', 'promoPriceCoins', 'promoStartMillis', 'promoEndMillis',
+          'promoLabel', 'premiumPastel', 'featured', 'newArrival', 'limitedEdition', 'available',
+          'consumable', 'boosterPackQty', 'boosterMaxPerGame', 'boosterPowerRadius',
+          'sortOrder', 'accentHex', 'totalSalesCount', 'uniqueOwnersCount', 'createdAt', 'updatedAt'
+        ])
+        && data.name is string && data.name.size() >= 2 && data.name.size() <= 80
+        && data.description is string && data.description.size() <= 300
+        && data.category in [
+          'THEME', 'BLOCK_SKIN', 'BOARD_BACKGROUND', 'SPECIAL_EFFECT',
+          'GAME_BOOSTER', 'AVATAR', 'PROFILE_FRAME', 'BADGE', 'EXCLUSIVE', 'ITEM'
+        ]
+        && data.subType is string && data.subType.size() <= 40
+        && data.themeKey is string && data.themeKey.size() <= 60
+        && data.assetKey is string && data.assetKey.size() <= 60
+        && data.imageUrl is string && data.imageUrl.size() <= 120000
+        && data.priceCoins is int && data.priceCoins >= 0 && data.priceCoins <= 1000000
+        && data.promoActive is bool
+        && data.promoPriceCoins is int && data.promoPriceCoins >= 0 && data.promoPriceCoins <= 1000000
+        && data.promoStartMillis is int && data.promoStartMillis >= 0
+        && data.promoEndMillis is int && data.promoEndMillis >= 0
+        && data.promoLabel is string && data.promoLabel.size() <= 40
+        && data.premiumPastel is bool
+        && data.featured is bool
+        && data.newArrival is bool
+        && data.limitedEdition is bool
+        && data.available is bool
+        && data.consumable is bool
+        && data.boosterPackQty is int && data.boosterPackQty >= 1 && data.boosterPackQty <= 99
+        && data.boosterMaxPerGame is int && data.boosterMaxPerGame >= 0 && data.boosterMaxPerGame <= 50
+        && data.boosterPowerRadius is int && data.boosterPowerRadius >= 0 && data.boosterPowerRadius <= 10
+        && data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 10000
+        && data.accentHex is string && data.accentHex.size() <= 12
+        && data.totalSalesCount is int && data.totalSalesCount >= 0
+        && data.uniqueOwnersCount is int && data.uniqueOwnersCount >= 0
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidShopCategory(data) {
+      return data.size() == 9
+        && data.keys().hasOnly([
+          'categoryKey', 'displayName', 'description', 'iconKey', 'accentHex',
+          'enabled', 'sortOrder', 'createdAt', 'updatedAt'
+        ])
+        && data.categoryKey is string && data.categoryKey.size() >= 2 && data.categoryKey.size() <= 40
+        && data.displayName is string && data.displayName.size() >= 2 && data.displayName.size() <= 60
+        && data.description is string && data.description.size() <= 200
+        && data.iconKey is string && data.iconKey.size() <= 40
+        && data.accentHex is string && data.accentHex.size() <= 12
+        && data.enabled is bool
+        && data.sortOrder is int && data.sortOrder >= 0 && data.sortOrder <= 1000
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidPromotionalOffer(data) {
+      return data.size() == 12
+        && data.keys().hasOnly([
+          'title', 'description', 'itemId', 'categoryKey', 'discountPercent',
+          'promoPriceCoins', 'startTimeMillis', 'endTimeMillis', 'active',
+          'createdBy', 'createdAt', 'updatedAt'
+        ])
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 80
+        && data.description is string && data.description.size() <= 300
+        && data.itemId is string && data.itemId.size() <= 128
+        && data.categoryKey is string && data.categoryKey.size() <= 40
+        && data.discountPercent is int && data.discountPercent >= 0 && data.discountPercent <= 95
+        && data.promoPriceCoins is int && data.promoPriceCoins >= 0 && data.promoPriceCoins <= 1000000
+        && data.startTimeMillis is int && data.startTimeMillis >= 0
+        && data.endTimeMillis is int && data.endTimeMillis > data.startTimeMillis
+        && data.active is bool
+        && data.createdBy is string && data.createdBy.size() >= 1 && data.createdBy.size() <= 128
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidPlayerInventory(data) {
+      return data.size() == 16
+        && data.keys().hasAll([
+          'userId', 'ownedItemIds', 'equippedThemeId', 'equippedBlockSkinId',
+          'equippedBackgroundId', 'equippedEffectId', 'equippedAvatarId',
+          'equippedFrameId', 'equippedBadgeId', 'equippedExclusiveId',
+          'hammerCount', 'undoCount', 'shuffleCount', 'rowBlasterCount',
+          'createdAt', 'updatedAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.ownedItemIds is list && data.ownedItemIds.size() <= 250
+        && data.equippedThemeId is string && data.equippedThemeId.size() >= 1 && data.equippedThemeId.size() <= 60
+        && data.equippedBlockSkinId is string && data.equippedBlockSkinId.size() <= 60
+        && data.equippedBackgroundId is string && data.equippedBackgroundId.size() <= 60
+        && data.equippedEffectId is string && data.equippedEffectId.size() <= 60
+        && data.equippedAvatarId is string && data.equippedAvatarId.size() <= 60
+        && data.equippedFrameId is string && data.equippedFrameId.size() <= 60
+        && data.equippedBadgeId is string && data.equippedBadgeId.size() <= 60
+        && data.equippedExclusiveId is string && data.equippedExclusiveId.size() <= 60
+        && data.hammerCount is int && data.hammerCount >= 0 && data.hammerCount <= 9999
+        && data.undoCount is int && data.undoCount >= 0 && data.undoCount <= 9999
+        && data.shuffleCount is int && data.shuffleCount >= 0 && data.shuffleCount <= 9999
+        && data.rowBlasterCount is int && data.rowBlasterCount >= 0 && data.rowBlasterCount <= 9999
+        && isValidTimestamp(data.createdAt)
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidPurchasedItem(data) {
+      return data.size() == 12
+        && data.keys().hasOnly([
+          'userId', 'itemId', 'itemName', 'category', 'assetKey',
+          'pricePaidCoins', 'originalPriceCoins', 'promoApplied',
+          'quantityPurchased', 'consumable', 'idempotencyKey', 'purchasedAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 128
+        && data.itemName is string && data.itemName.size() >= 1 && data.itemName.size() <= 80
+        && data.category in [
+          'THEME', 'BLOCK_SKIN', 'BOARD_BACKGROUND', 'SPECIAL_EFFECT',
+          'GAME_BOOSTER', 'AVATAR', 'PROFILE_FRAME', 'BADGE', 'EXCLUSIVE', 'ITEM'
+        ]
+        && data.assetKey is string && data.assetKey.size() <= 60
+        && data.pricePaidCoins is int && data.pricePaidCoins >= 0 && data.pricePaidCoins <= 1000000
+        && data.originalPriceCoins is int && data.originalPriceCoins >= 0 && data.originalPriceCoins <= 1000000
+        && data.promoApplied is bool
+        && data.quantityPurchased is int && data.quantityPurchased >= 1 && data.quantityPurchased <= 99
+        && data.consumable is bool
+        && data.idempotencyKey is string && data.idempotencyKey.size() >= 6 && data.idempotencyKey.size() <= 128
+        && isValidTimestamp(data.purchasedAt);
+    }
+
+    function isValidShopTransaction(data) {
+      return data.size() == 13
+        && data.keys().hasOnly([
+          'userId', 'userDisplayName', 'itemId', 'itemName', 'category',
+          'pricePaidCoins', 'originalPriceCoins', 'coinSource', 'quantity',
+          'promoOfferId', 'idempotencyKey', 'status', 'createdAt'
+        ])
+        && data.userId is string && data.userId.size() >= 1 && data.userId.size() <= 128
+        && data.userDisplayName is string && data.userDisplayName.size() >= 1 && data.userDisplayName.size() <= 60
+        && data.itemId is string && data.itemId.size() >= 1 && data.itemId.size() <= 128
+        && data.itemName is string && data.itemName.size() >= 1 && data.itemName.size() <= 80
+        && data.category in [
+          'THEME', 'BLOCK_SKIN', 'BOARD_BACKGROUND', 'SPECIAL_EFFECT',
+          'GAME_BOOSTER', 'AVATAR', 'PROFILE_FRAME', 'BADGE', 'EXCLUSIVE', 'ITEM'
+        ]
+        && data.pricePaidCoins is int && data.pricePaidCoins >= 0 && data.pricePaidCoins <= 1000000
+        && data.originalPriceCoins is int && data.originalPriceCoins >= 0 && data.originalPriceCoins <= 1000000
+        && data.coinSource in ['EARNED', 'PURCHASED', 'MIXED', 'FREE']
+        && data.quantity is int && data.quantity >= 1 && data.quantity <= 99
+        && data.promoOfferId is string && data.promoOfferId.size() <= 128
+        && data.idempotencyKey is string && data.idempotencyKey.size() >= 6 && data.idempotencyKey.size() <= 128
+        && data.status == 'COMPLETED'
+        && isValidTimestamp(data.createdAt);
+    }
+
+    function isValidDailyRewardConfig(data) {
+      return data.keys().hasAll([
+          'dayNumber', 'title', 'description', 'rewardCoins', 'bonusItemName', 'active', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'dayNumber', 'title', 'description', 'rewardCoins', 'bonusItemName', 'active', 'updatedAt'
+        ])
+        && data.dayNumber is int && data.dayNumber >= 1 && data.dayNumber <= 7
+        && data.title is string && data.title.size() >= 2 && data.title.size() <= 60
+        && data.description is string && data.description.size() <= 200
+        && data.rewardCoins is int && data.rewardCoins >= 0 && data.rewardCoins <= 5000
+        && data.bonusItemName is string && data.bonusItemName.size() <= 80
+        && data.active is bool
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidLevelConfig(data) {
+      return data.keys().hasAll([
+          'levelNumber', 'requiredLines', 'rewardCoins', 'completionsCount', 'active', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'levelNumber', 'requiredLines', 'rewardCoins', 'completionsCount', 'active', 'updatedAt'
+        ])
+        && data.levelNumber is int && data.levelNumber >= 1 && data.levelNumber <= 100
+        && data.requiredLines is int && data.requiredLines >= 1 && data.requiredLines <= 10000
+        && data.rewardCoins is int && data.rewardCoins >= 0 && data.rewardCoins <= 50000
+        && data.completionsCount is int && data.completionsCount >= 0
+        && data.active is bool
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidGlobalSettings(data) {
+      return data.keys().hasAll([
+          'continueCostCoins', 'exchangeRatePaisaPerCoin', 'minWithdrawalPaisa',
+          'maxDailyWithdrawals', 'allowEarnedCoinCashout', 'jazzCashEnabled',
+          'easypaisaEnabled', 'bankTransferEnabled', 'jazzCashInstructions',
+          'easypaisaInstructions', 'bankTransferInstructions', 'paymentSandboxMode',
+          'rewardedAdConfigured', 'gameEnabled', 'maintenanceMessage', 'updatedAt'
+        ])
+        && data.keys().hasOnly([
+          'continueCostCoins', 'exchangeRatePaisaPerCoin', 'minWithdrawalPaisa',
+          'maxDailyWithdrawals', 'allowEarnedCoinCashout', 'jazzCashEnabled',
+          'easypaisaEnabled', 'bankTransferEnabled', 'jazzCashInstructions',
+          'easypaisaInstructions', 'bankTransferInstructions', 'paymentSandboxMode',
+          'rewardedAdConfigured', 'gameEnabled', 'maintenanceMessage', 'updatedAt'
+        ])
+        && data.continueCostCoins is int && data.continueCostCoins >= 0 && data.continueCostCoins <= 10000
+        && data.exchangeRatePaisaPerCoin is int && data.exchangeRatePaisaPerCoin >= 1 && data.exchangeRatePaisaPerCoin <= 1000
+        && data.minWithdrawalPaisa is int && data.minWithdrawalPaisa >= 10000 && data.minWithdrawalPaisa <= 10000000
+        && data.maxDailyWithdrawals is int && data.maxDailyWithdrawals >= 1 && data.maxDailyWithdrawals <= 50
+        && data.allowEarnedCoinCashout is bool
+        && data.jazzCashEnabled is bool
+        && data.easypaisaEnabled is bool
+        && data.bankTransferEnabled is bool
+        && data.jazzCashInstructions is string && data.jazzCashInstructions.size() <= 400
+        && data.easypaisaInstructions is string && data.easypaisaInstructions.size() <= 400
+        && data.bankTransferInstructions is string && data.bankTransferInstructions.size() <= 400
+        && data.paymentSandboxMode is bool
+        && data.rewardedAdConfigured is bool
+        && data.gameEnabled is bool
+        && data.maintenanceMessage is string && data.maintenanceMessage.size() <= 300
+        && isValidTimestamp(data.updatedAt);
+    }
+
+    function isValidAuditLog(data) {
+      return data.keys().hasAll([
+          'adminUid', 'adminEmail', 'action', 'targetType', 'targetId', 'details', 'createdAt'
+        ])
+        && data.keys().hasOnly([
+          'adminUid', 'adminEmail', 'action', 'targetType', 'targetId', 'details', 'createdAt'
+        ])
+        && data.adminUid is string && data.adminUid.size() >= 1 && data.adminUid.size() <= 128
+        && data.adminEmail is string && data.adminEmail.size() <= 120
+        && data.action is string && data.action.size() >= 2 && data.action.size() <= 80
+        && data.targetType is string && data.targetType.size() >= 2 && data.targetType.size() <= 50
+        && data.targetId is string && data.targetId.size() <= 128
+        && data.details is string && data.details.size() >= 1 && data.details.size() <= 500
+        && isValidTimestamp(data.createdAt);
+    }
+
+    // 4. User Account Update Action Helpers (precomputed changed keys set keeps CEL well below 1000 expressions)
+    function isOwnerProfileUpdate(changed) {
+      return changed.hasOnly([
+          'displayName', 'photoUrl', 'selectedThemeId',
+          'walletVerificationName', 'walletVerificationProvider',
+          'walletVerificationAccount', 'walletVerificationCompleted',
+          'withdrawalPinHash', 'withdrawalPinSalt', 'musicEnabled', 'sfxEnabled', 'updatedAt'
+        ])
+        && (incoming().selectedThemeId in existing().unlockedThemeIds);
+    }
+
+    function isOwnerGameplayUpdate(changed) {
+      return changed.hasOnly([
+          'classicHighScore', 'totalLinesCleared', 'totalGamesPlayed',
+          'currentLevel', 'currentLevelLines', 'completedLevelsCount',
+          'dailyChallengeLastDate', 'dailyChallengeBestScore', 'earnedCoins', 'updatedAt'
+        ])
+        && incoming().earnedCoins >= existing().earnedCoins
+        && (incoming().earnedCoins - existing().earnedCoins) <= 1500
+        && incoming().totalLinesCleared >= existing().totalLinesCleared
+        && incoming().totalGamesPlayed >= existing().totalGamesPlayed
+        && incoming().classicHighScore >= existing().classicHighScore
+        && incoming().currentLevel >= existing().currentLevel
+        && incoming().completedLevelsCount >= existing().completedLevelsCount;
+    }
+
+    function isOwnerDailyRewardClaim(changed) {
+      return changed.hasOnly([
+          'dailyRewardNextDay', 'dailyRewardLastClaimDate', 'earnedCoins', 'updatedAt'
+        ])
+        && incoming().dailyRewardLastClaimDate != existing().dailyRewardLastClaimDate
+        && incoming().dailyRewardLastClaimDate.size() >= 8
+        && incoming().dailyRewardNextDay == ((existing().dailyRewardNextDay % 7) + 1)
+        && incoming().earnedCoins >= existing().earnedCoins
+        && (incoming().earnedCoins - existing().earnedCoins) <= 5000;
+    }
+
+    function isOwnerCoinSpend(changed) {
+      return changed.hasOnly([
+          'earnedCoins', 'purchasedCoins', 'unlockedThemeIds', 'selectedThemeId', 'updatedAt'
+        ])
+        && incoming().earnedCoins <= existing().earnedCoins
+        && incoming().purchasedCoins <= existing().purchasedCoins
+        && incoming().unlockedThemeIds.size() <= existing().unlockedThemeIds.size() + 1
+        && (incoming().selectedThemeId in incoming().unlockedThemeIds);
+    }
+
+    function isOwnerWalletExchange(changed) {
+      return changed.hasOnly([
+          'mainWalletPkrPaisa', 'purchasedCoins', 'earnedCoins', 'updatedAt'
+        ])
+        && isConservedExchange();
+    }
+
+    function isConservedExchange() {
+      let rate = currentExchangeRatePaisa();
+      let oldTotal = existing().mainWalletPkrPaisa + ((existing().purchasedCoins + existing().earnedCoins) * rate);
+      let newTotal = incoming().mainWalletPkrPaisa + ((incoming().purchasedCoins + incoming().earnedCoins) * rate);
+      let pkrToCoin = incoming().mainWalletPkrPaisa < existing().mainWalletPkrPaisa
+        && incoming().purchasedCoins > existing().purchasedCoins
+        && incoming().earnedCoins == existing().earnedCoins;
+      let coinToPkr = incoming().mainWalletPkrPaisa > existing().mainWalletPkrPaisa
+        && incoming().purchasedCoins <= existing().purchasedCoins
+        && incoming().earnedCoins <= existing().earnedCoins
+        && (incoming().earnedCoins == existing().earnedCoins || earnedCashoutAllowed());
+      return newTotal == oldTotal && (pkrToCoin || coinToPkr);
+    }
+
+    function isOwnerWithdrawalHold(changed) {
+      return changed.hasOnly(['mainWalletPkrPaisa', 'updatedAt'])
+        && incoming().mainWalletPkrPaisa < existing().mainWalletPkrPaisa
+        && (existing().mainWalletPkrPaisa - incoming().mainWalletPkrPaisa) >= 50000;
+    }
+
+    function isAllowedOwnerUserUpdate() {
+      let changed = incoming().diff(existing()).affectedKeys();
+      return isOwnerWithdrawalHold(changed)
+        || isOwnerDailyRewardClaim(changed)
+        || isOwnerCoinSpend(changed)
+        || isOwnerWalletExchange(changed)
+        || isOwnerGameplayUpdate(changed)
+        || isOwnerProfileUpdate(changed);
+    }
+
+    // 5. Collection Match Blocks
+
+    match /users/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && incoming().userId == request.auth.uid
+        && incoming().blocked == false
+        && incoming().mainWalletPkrPaisa == 0
+        && incoming().purchasedCoins == 0
+        && incoming().earnedCoins == 0
+        && incoming().classicHighScore == 0
+        && incoming().totalLinesCleared == 0
+        && incoming().totalGamesPlayed == 0
+        && incoming().currentLevel == 1
+        && incoming().currentLevelLines == 0
+        && incoming().completedLevelsCount == 0
+        && incoming().dailyRewardNextDay == 1
+        && incoming().selectedThemeId == 'simple_classic'
+        && incoming().unlockedThemeIds == ['simple_classic']
+        && isValidUserAccount(incoming());
+
+      allow update: if isValidId(userId)
+        && isSignedIn()
+        && isValidUserAccount(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && (
+          isSuperAdmin()
+          || (
+            isOwner(userId)
+            && existing().blocked == false
+            && incoming().blocked == false
+            && isAllowedOwnerUserUpdate()
+          )
+          || isAdmin()
+        );
+
+      allow delete: if false;
+
+      match /levelProgress/{levelId} {
+        allow get, list: if isOwner(userId) || isAdmin();
+        allow create: if isValidId(levelId)
+          && isOwner(userId)
+          && isValidLevelProgress(incoming())
+          && incoming().userId == request.auth.uid
+          && levelId == ('level_' + string(incoming().levelNumber));
+        allow update: if isValidId(levelId)
+          && isSignedIn()
+          && isValidLevelProgress(incoming())
+          && incoming().userId == existing().userId
+          && incoming().levelNumber == existing().levelNumber
+          && incoming().createdAt == existing().createdAt
+          && (
+            isAdmin()
+            || (
+              isOwner(userId)
+              && incoming().requiredLines == existing().requiredLines
+              && incoming().linesCleared >= existing().linesCleared
+              && incoming().bestScore >= existing().bestScore
+              && incoming().attemptsCount >= existing().attemptsCount
+              && incoming().starsEarned >= existing().starsEarned
+              && (!existing().completed || (incoming().completed == true && incoming().completedAt == existing().completedAt))
+            )
+          );
+        allow delete: if false;
+      }
+    }
+
+    match /admins/{adminId} {
+      allow get: if isValidId(adminId) && (isOwner(adminId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(adminId) && isSuperAdmin() && incoming().userId == adminId && isValidAdminRecord(incoming());
+      allow update: if isValidId(adminId) && isSuperAdmin() && incoming().userId == existing().userId && incoming().createdAt == existing().createdAt && isValidAdminRecord(incoming());
+      allow delete: if isValidId(adminId) && isSuperAdmin();
+    }
+
+    match /gameSessions/{sessionId} {
+      allow get: if isValidId(sessionId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(sessionId)
+        && isSignedIn()
+        && incoming().userId == request.auth.uid
+        && isValidGameSession(incoming());
+      allow update, delete: if false;
+    }
+
+    match /leaderboards/{entryId} {
+      allow get: if isValidId(entryId) && isSignedIn();
+      allow list: if isSignedIn() && resource.data.boardType in ['DAILY', 'ALL_TIME'];
+      allow create: if isValidId(entryId)
+        && isSignedIn()
+        && incoming().userId == request.auth.uid
+        && isValidLeaderboardEntry(incoming());
+      allow update: if isValidId(entryId)
+        && isSignedIn()
+        && isValidLeaderboardEntry(incoming())
+        && incoming().userId == existing().userId
+        && incoming().boardType == existing().boardType
+        && incoming().dateKey == existing().dateKey
+        && incoming().createdAt == existing().createdAt
+        && (
+          isAdmin()
+          || (
+            existing().userId == request.auth.uid
+            && incoming().bestScore >= existing().bestScore
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'photoUrl', 'bestScore', 'totalLines', 'highestLevel', 'gamesPlayed', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(entryId) && isAdmin();
+    }
+
+    match /dailyChallenges/{dateKey} {
+      allow get: if isValidId(dateKey) && isSignedIn();
+      allow list: if isSignedIn() && (resource.data.active == true || isAdmin());
+      allow create: if isValidId(dateKey) && isAdmin() && incoming().dateKey == dateKey && isValidDailyChallenge(incoming());
+      allow update: if isValidId(dateKey) && isAdmin() && incoming().createdAt == existing().createdAt && isValidDailyChallenge(incoming());
+      allow delete: if isValidId(dateKey) && isAdmin();
+    }
+
+    match /dailyChallengeClaims/{claimId} {
+      allow get: if isValidId(claimId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(claimId)
+        && isSignedIn()
+        && incoming().userId == request.auth.uid
+        && claimId == (incoming().dateKey + '_' + request.auth.uid)
+        && isValidDailyChallengeClaim(incoming());
+      allow update, delete: if false;
+    }
+
+    match /timeChallenges/{challengeId} {
+      allow get: if isValidId(challengeId) && isSignedIn();
+      allow list: if isSignedIn() && (resource.data.active == true || isAdmin());
+      allow create: if isValidId(challengeId) && isAdmin() && isValidTimeChallenge(incoming());
+      allow update: if isValidId(challengeId) && isAdmin() && incoming().createdAt == existing().createdAt && isValidTimeChallenge(incoming());
+      allow delete: if isValidId(challengeId) && isAdmin();
+    }
+
+    match /challengeParticipants/{participantId} {
+      allow get: if isValidId(participantId) && isSignedIn();
+      allow list: if isSignedIn() && (resource.data.publicEntry == true || isAdmin());
+      allow create: if isValidId(participantId)
+        && isSignedIn()
+        && incoming().userId == request.auth.uid
+        && participantId == (incoming().challengeId + '_' + request.auth.uid)
+        && isValidChallengeParticipant(incoming())
+        && exists(/databases/$(database)/documents/timeChallenges/$(incoming().challengeId));
+      allow update: if isValidId(participantId)
+        && isSignedIn()
+        && isValidChallengeParticipant(incoming())
+        && incoming().userId == existing().userId
+        && incoming().challengeId == existing().challengeId
+        && incoming().createdAt == existing().createdAt
+        && (
+          isAdmin()
+          || (
+            existing().userId == request.auth.uid
+            && incoming().bestScore >= existing().bestScore
+            && (!existing().targetRewardClaimed || incoming().targetRewardClaimed == true)
+            && incoming().diff(existing()).affectedKeys().hasOnly([
+              'displayName', 'bestScore', 'linesCleared', 'targetRewardClaimed', 'rewardCoinsAwarded', 'updatedAt'
+            ])
+          )
+        );
+      allow delete: if isValidId(participantId) && isAdmin();
+    }
+
+    match /walletTransactions/{txId} {
+      allow get: if isValidId(txId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(txId)
+        && isSignedIn()
+        && (incoming().userId == request.auth.uid || isAdmin())
+        && isValidWalletTransaction(incoming());
+      allow update, delete: if false;
+    }
+
+    match /deposits/{depositId} {
+      allow get: if isValidId(depositId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(depositId)
+        && isSignedIn()
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'PENDING'
+        && incoming().reviewedBy == ''
+        && isValidDeposit(incoming());
+      allow update: if isValidId(depositId)
+        && isAdmin()
+        && isValidDeposit(incoming())
+        && incoming().userId == existing().userId
+        && incoming().amountPaisa == existing().amountPaisa
+        && incoming().idempotencyKey == existing().idempotencyKey
+        && incoming().createdAt == existing().createdAt
+        && existing().status in ['PENDING', 'PROCESSING']
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'adminNote', 'adminPaymentRef', 'reviewedBy', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /withdrawals/{withdrawalId} {
+      allow get: if isValidId(withdrawalId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(withdrawalId)
+        && isSignedIn()
+        && incoming().userId == request.auth.uid
+        && incoming().status == 'PENDING'
+        && incoming().reviewedBy == ''
+        && isValidWithdrawal(incoming());
+      allow update: if isValidId(withdrawalId)
+        && isAdmin()
+        && isValidWithdrawal(incoming())
+        && incoming().userId == existing().userId
+        && incoming().amountPaisa == existing().amountPaisa
+        && incoming().idempotencyKey == existing().idempotencyKey
+        && incoming().createdAt == existing().createdAt
+        && !(existing().status in ['PAID', 'REJECTED'])
+        && incoming().diff(existing()).affectedKeys().hasOnly([
+          'status', 'adminNote', 'payoutReference', 'reviewedBy', 'updatedAt'
+        ]);
+      allow delete: if false;
+    }
+
+    match /exchanges/{exchangeId} {
+      allow get: if isValidId(exchangeId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(exchangeId)
+        && isSignedIn()
+        && incoming().userId == request.auth.uid
+        && isValidExchange(incoming());
+      allow update, delete: if false;
+    }
+
+    function isAllowedShopItemUpdate() {
+      let changed = incoming().diff(existing()).affectedKeys();
+      return (
+        existing().available == true
+        && changed.hasOnly(['totalSalesCount', 'uniqueOwnersCount', 'updatedAt'])
+        && incoming().totalSalesCount is int
+        && incoming().uniqueOwnersCount is int
+        && incoming().totalSalesCount == (('totalSalesCount' in existing()) ? existing().totalSalesCount : 0) + 1
+        && incoming().uniqueOwnersCount >= (('uniqueOwnersCount' in existing()) ? existing().uniqueOwnersCount : 0)
+        && incoming().uniqueOwnersCount <= (('uniqueOwnersCount' in existing()) ? existing().uniqueOwnersCount : 0) + 1
+        && isValidTimestamp(incoming().updatedAt)
+      ) || (
+        isValidShopItem(incoming())
+        && (
+          hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_SHOP_ITEMS'])
+          || (
+            changed.hasOnly([
+              'priceCoins', 'promoActive', 'promoPriceCoins', 'promoStartMillis',
+              'promoEndMillis', 'promoLabel', 'updatedAt'
+            ])
+            && hasAnyAdminPerm(['MANAGE_SHOP_PRICES'])
+          )
+        )
+      );
+    }
+
+    function isAllowedInventoryUpdate(userId) {
+      let changed = incoming().diff(existing()).affectedKeys();
+      return (
+        isOwner(userId)
+        && (
+          changed.hasOnly([
+            'equippedThemeId', 'equippedBlockSkinId', 'equippedBackgroundId',
+            'equippedEffectId', 'equippedAvatarId', 'equippedFrameId',
+            'equippedBadgeId', 'equippedExclusiveId', 'updatedAt'
+          ])
+          || (
+            changed.hasOnly([
+              'hammerCount', 'undoCount', 'shuffleCount', 'rowBlasterCount', 'updatedAt'
+            ])
+            && incoming().hammerCount <= existing().hammerCount
+            && incoming().undoCount <= existing().undoCount
+            && incoming().shuffleCount <= existing().shuffleCount
+            && incoming().rowBlasterCount <= existing().rowBlasterCount
+          )
+          || (
+            incoming().ownedItemIds.hasAll(existing().ownedItemIds)
+            && incoming().ownedItemIds.size() <= existing().ownedItemIds.size() + 1
+            && incoming().hammerCount >= existing().hammerCount
+            && incoming().hammerCount <= existing().hammerCount + 99
+            && incoming().undoCount >= existing().undoCount
+            && incoming().undoCount <= existing().undoCount + 99
+            && incoming().shuffleCount >= existing().shuffleCount
+            && incoming().shuffleCount <= existing().shuffleCount + 99
+            && incoming().rowBlasterCount >= existing().rowBlasterCount
+            && incoming().rowBlasterCount <= existing().rowBlasterCount + 99
+          )
+        )
+      ) || hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_PLAYERS']);
+    }
+
+    match /shopItems/{itemId} {
+      allow get: if isValidId(itemId) && isSignedIn();
+      allow list: if isSignedIn() && (resource.data.available == true || isAdmin());
+      allow create: if isValidId(itemId)
+        && hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_SHOP_ITEMS'])
+        && isValidShopItem(incoming());
+      allow update: if isValidId(itemId)
+        && isSignedIn()
+        && incoming().createdAt == existing().createdAt
+        && isAllowedShopItemUpdate();
+      allow delete: if isValidId(itemId)
+        && hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_SHOP_ITEMS']);
+    }
+
+    match /shopCategories/{categoryId} {
+      allow get: if isValidId(categoryId) && isSignedIn();
+      allow list: if isSignedIn() && (resource.data.enabled == true || isAdmin());
+      allow create: if isValidId(categoryId)
+        && hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_SHOP_CATEGORIES'])
+        && isValidShopCategory(incoming());
+      allow update: if isValidId(categoryId)
+        && hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_SHOP_CATEGORIES'])
+        && incoming().createdAt == existing().createdAt
+        && isValidShopCategory(incoming());
+      allow delete: if isValidId(categoryId)
+        && hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_SHOP_CATEGORIES']);
+    }
+
+    match /promotionalOffers/{offerId} {
+      allow get: if isValidId(offerId) && isSignedIn();
+      allow list: if isSignedIn() && (resource.data.active == true || isAdmin());
+      allow create: if isValidId(offerId)
+        && hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_SHOP_PROMOS', 'MANAGE_SHOP_PRICES'])
+        && isValidPromotionalOffer(incoming());
+      allow update: if isValidId(offerId)
+        && hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_SHOP_PROMOS', 'MANAGE_SHOP_PRICES'])
+        && incoming().createdAt == existing().createdAt
+        && isValidPromotionalOffer(incoming());
+      allow delete: if isValidId(offerId)
+        && hasAnyAdminPerm(['MANAGE_SHOP', 'MANAGE_SHOP_PROMOS', 'MANAGE_SHOP_PRICES']);
+    }
+
+    match /playerInventory/{userId} {
+      allow get: if isValidId(userId) && (isOwner(userId) || isAdmin());
+      allow list: if isAdmin();
+      allow create: if isValidId(userId)
+        && isOwner(userId)
+        && incoming().userId == request.auth.uid
+        && incoming().hammerCount == 0
+        && incoming().undoCount == 0
+        && incoming().shuffleCount == 0
+        && incoming().rowBlasterCount == 0
+        && incoming().ownedItemIds.size() <= 1
+        && isValidPlayerInventory(incoming());
+      allow update: if isValidId(userId)
+        && isSignedIn()
+        && isValidPlayerInventory(incoming())
+        && incoming().userId == existing().userId
+        && incoming().createdAt == existing().createdAt
+        && isAllowedInventoryUpdate(userId);
+      allow delete: if false;
+    }
+
+    match /purchasedItems/{purchaseId} {
+      allow get: if isValidId(purchaseId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(purchaseId)
+        && isSignedIn()
+        && incoming().userId == request.auth.uid
+        && isValidPurchasedItem(incoming())
+        && (
+          (incoming().consumable == false && purchaseId == (request.auth.uid + '_' + incoming().itemId))
+          || (incoming().consumable == true && purchaseId == ('bst_' + request.auth.uid + '_' + incoming().idempotencyKey))
+        )
+        && exists(/databases/$(database)/documents/shopItems/$(incoming().itemId))
+        && get(/databases/$(database)/documents/shopItems/$(incoming().itemId)).data.available == true;
+      allow update, delete: if false;
+    }
+
+    match /shopTransactions/{txId} {
+      allow get: if isValidId(txId) && isSignedIn() && (existing().userId == request.auth.uid || isAdmin());
+      allow list: if isSignedIn() && (resource.data.userId == request.auth.uid || isAdmin());
+      allow create: if isValidId(txId)
+        && isSignedIn()
+        && incoming().userId == request.auth.uid
+        && txId == ('stx_' + request.auth.uid + '_' + incoming().idempotencyKey)
+        && isValidShopTransaction(incoming())
+        && exists(/databases/$(database)/documents/shopItems/$(incoming().itemId))
+        && get(/databases/$(database)/documents/shopItems/$(incoming().itemId)).data.available == true;
+      allow update, delete: if false;
+    }
+
+    match /dailyRewards/{dayId} {
+      allow get: if isValidId(dayId) && isSignedIn();
+      allow list: if isSignedIn() && (resource.data.active == true || isAdmin());
+      allow create, update: if isValidId(dayId) && isAdmin() && isValidDailyRewardConfig(incoming());
+      allow delete: if isValidId(dayId) && isAdmin();
+    }
+
+    match /levels/{levelId} {
+      allow get: if isValidId(levelId) && isSignedIn();
+      allow list: if isSignedIn() && (resource.data.active == true || isAdmin());
+      allow create: if isValidId(levelId) && isAdmin() && isValidLevelConfig(incoming());
+      allow update: if isValidId(levelId)
+        && isSignedIn()
+        && isValidLevelConfig(incoming())
+        && (
+          isAdmin()
+          || (
+            incoming().levelNumber == existing().levelNumber
+            && incoming().requiredLines == existing().requiredLines
+            && incoming().rewardCoins == existing().rewardCoins
+            && incoming().completionsCount == existing().completionsCount + 1
+            && incoming().diff(existing()).affectedKeys().hasOnly(['completionsCount', 'updatedAt'])
+          )
+        );
+      allow delete: if isValidId(levelId) && isAdmin();
+    }
+
+    match /settings/{settingId} {
+      allow get: if isValidId(settingId) && isSignedIn();
+      allow list: if isAdmin();
+      allow create, update: if isValidId(settingId) && isAdmin() && isValidGlobalSettings(incoming());
+      allow delete: if false;
+    }
+
+    match /auditLogs/{logId} {
+      allow get: if isValidId(logId) && isAdmin();
+      allow list: if isAdmin();
+      allow create: if isValidId(logId)
+        && isAdmin()
+        && incoming().adminUid == request.auth.uid
+        && isValidAuditLog(incoming());
+      allow update, delete: if false;
+    }
+  }
+}
